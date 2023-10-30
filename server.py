@@ -1,7 +1,5 @@
 # This is server code to send video and audio frames over UDP
 
-# test
-
 import socket
 import threading, wave, pyaudio, time
 
