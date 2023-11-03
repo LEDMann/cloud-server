@@ -4,7 +4,7 @@ import socket
 import threading, wave, pyaudio, time
 
 host_name = socket.gethostname()
-host_ip = '192.168.1.102'#  socket.gethostbyname(host_name)
+host_ip = socket.gethostbyname(host_name)
 print(host_ip)
 port = 9633
 # For details visit: www.pyshine.com
