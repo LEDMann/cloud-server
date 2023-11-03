@@ -43,5 +43,5 @@ def main():
     t1 = threading.Thread(target=audio_stream_UDP, args=())
     t1.start()
 
-if __main__ == "__main__":
+if __name__ == "__main__":
     main()
