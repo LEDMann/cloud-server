@@ -19,13 +19,13 @@ def audio_stream_UDP():
     server_socket.bind((host_ip, (port)))
     CHUNK = 10*1024
     wf = wave.open("temp.wav")
-    p = pyaudio.PyAudio()
+    #p = pyaudio.PyAudio()
     print('server listening at',(host_ip, (port)),wf.getframerate())
-    stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
-                    channels=wf.getnchannels(),
-                    rate=wf.getframerate(),
-                    input=True,
-                    frames_per_buffer=CHUNK)
+    # stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
+    #                 channels=wf.getnchannels(),
+    #                 rate=wf.getframerate(),
+    #                 input=True,
+    #                 frames_per_buffer=CHUNK)
 
     data = None
     sample_rate = wf.getframerate()
