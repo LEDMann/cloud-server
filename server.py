@@ -144,8 +144,14 @@ def manage_stream():
                             song_name.put("megalovania")
                             stream_thread.start()
                         case _:
+                            with song_name.mutex:
+                                song_name.queue.clear()
+                            song_name.put("crab_rave")
                             stream_thread.start()
                 else:
+                    with song_name.mutex:
+                        song_name.queue.clear()
+                    song_name.put("crab_rave")
                     stream_thread.start()
             case 'stop':
                 print(run_stream.qsize())
@@ -156,55 +162,61 @@ def manage_stream():
             case _:
                 break
 
+
+def kill_at_song_finish(song):
+    duration = (song.getnframes() / song.getframerate())
+    print(duration)
+    timer = time.perf_counter() + duration
+    while True:
+        if time.perf_counter() > timer:
+            break
+    run_stream.put("stop")
+
 def stream(curr_subnet, controller_conn, speaker_conn):
-    CHUNK = 12 * 1024
-    song = wave.open("songs/{}.wav".format(song_name.get()))
+    working_dir = os.getcwd()
+    song_file_name = song_name.get()
+    print(f"opening wav file at {working_dir}\\songs\\{song_file_name}.wav")
+    with wave.open(f"{working_dir}\\songs\\{song_file_name}.wav", "rb") as song:
+        print(curr_subnet.controller)
+        print(curr_subnet.speaker)
+        controller_conn.sendto(b'playing', curr_subnet.controller)
+        # speaker_conn.sendto(struct.pack("f", song_duration), curr_subnet.speaker)
 
-    def kill_at_song_finish(song):
-        duration = (song.getnframes() / song.getframerate())
-        timer = time.perf_counter() + duration
-        while True:
-            if time.perf_counter() > timer:
-                break
-        run_stream.put("stop")
+        timer_thread = threading.Thread(target=kill_at_song_finish, args=(song, ))
+        timer_thread.start()
 
-    print(curr_subnet.controller)
-    print(curr_subnet.speaker)
-    controller_conn.sendto(b'playing', curr_subnet.controller)
-    # speaker_conn.sendto(struct.pack("f", song_duration), curr_subnet.speaker)
+        CHUNK = 12 * 1024
 
-    timer_thread = threading.Thread(target=kill_at_song_finish, args=(song, ))
-    timer_thread.start()
+        while run_stream.empty():
+            data = song.readframes(CHUNK)
+            if data != b'':
+                speaker_conn.sendto(data, curr_subnet.speaker)
+        
+        speaker_conn.sendto(b'stop', curr_subnet.speaker)
+        controller_conn.sendto(b'stream complete', curr_subnet.controller)
+        print("stream complete")
+        with run_stream.mutex:
+            run_stream.queue.clear()
+        print(run_stream.qsize())
+        song.close()
 
-    while run_stream.empty():
-        data = song.readframes(CHUNK)
-        if data != b'':
-            speaker_conn.sendto(data, curr_subnet.speaker)
-    
-    speaker_conn.sendto(b'stop', curr_subnet.speaker)
-    controller_conn.sendto(b'stream complete', curr_subnet.controller)
-    print("stream complete")
-    with run_stream.mutex:
-        run_stream.queue.clear()
-    print(run_stream.qsize())
+def check_subnet_storage():
+    subnets_len = len(subnets)
+    last_curr_subet_cache = curr_subnet
+    print("subnet len is {}".format(subnets_len))
+    # print("the subnet object at that index is {}, {}, {}".format(subnets[subnets_len].subnet, subnets[subnets_len].controller, subnets[subnets_len].speaker))
+    # print("the value of curr_subnet is {}, {}, {}".format(curr_subnet.subnet, curr_subnet.controller, curr_subnet.speaker))
+    while True:
+        if subnets_len != len(subnets) or last_curr_subet_cache != curr_subnet:
+            subnets_len = len(subnets)
+            last_curr_subet_cache = curr_subnet
+            print("subnet len is {}".format(subnets_len))
+            print("the subnet object at that index is {}, {}, {}".format(subnets[subnets_len-1].subnet, subnets[subnets_len-1].controller, subnets[subnets_len-1].speaker))
+            print("the value of curr_subnet is {}, {}, {}".format(curr_subnet.subnet, curr_subnet.controller, curr_subnet.speaker))
 
 def main():
     start_stream = threading.Event()
     start_stream.clear()
-
-    def check_subnet_storage():
-        subnets_len = len(subnets)
-        last_curr_subet_cache = curr_subnet
-        print("subnet len is {}".format(subnets_len))
-        # print("the subnet object at that index is {}, {}, {}".format(subnets[subnets_len].subnet, subnets[subnets_len].controller, subnets[subnets_len].speaker))
-        # print("the value of curr_subnet is {}, {}, {}".format(curr_subnet.subnet, curr_subnet.controller, curr_subnet.speaker))
-        while True:
-            if subnets_len != len(subnets) or last_curr_subet_cache != curr_subnet:
-                subnets_len = len(subnets)
-                last_curr_subet_cache = curr_subnet
-                print("subnet len is {}".format(subnets_len))
-                print("the subnet object at that index is {}, {}, {}".format(subnets[subnets_len-1].subnet, subnets[subnets_len-1].controller, subnets[subnets_len-1].speaker))
-                print("the value of curr_subnet is {}, {}, {}".format(curr_subnet.subnet, curr_subnet.controller, curr_subnet.speaker))
             
     check_subnet_storage_thread = threading.Thread(target=check_subnet_storage, args=())
     check_subnet_storage_thread.start()
@@ -225,5 +237,4 @@ def main():
 if __name__ == "__main__":
     run_stream = Queue()
     song_name = Queue()
-    song_name.put("crab_rave")
     main()
