@@ -1,6 +1,6 @@
 import socket
 import os
-import threading, wave, pyaudio, time
+import threading, wave, time
 import json
 import ipaddress
 import struct
@@ -124,38 +124,69 @@ def manage_stream():
     speaker_conn.setsockopt(socket.SOL_SOCKET,socket.SO_RCVBUF,BUFF_SIZE)
     speaker_conn.bind(speaker_listen_addr)
 
-    CHUNK = 10*1024
-    wf = wave.open("temp.wav")
-    wf_duration = (wf.getnframes() / wf.getframerate())
-
-    print(wf_duration)
-
-    data = None
-    sample_rate = wf.getframerate()
-
     while True:
         msg,_ = controller_conn.recvfrom(BUFF_SIZE)
-        print(msg)
-        match msg:
-            case b'go':
-                print(curr_subnet.controller)
-                print(curr_subnet.speaker)
-                controller_conn.sendto(b'playing', curr_subnet.controller)
-                speaker_conn.sendto(struct.pack("f", wf_duration), curr_subnet.speaker)
-                timer = time.perf_counter()
-                while True:
-                    if (time.perf_counter() - wf_duration) >= timer:
-                        break
-                    else:
-                        data = wf.readframes(CHUNK)
-                        speaker_conn.sendto(data, curr_subnet.speaker)
-                        time.sleep(0.8*CHUNK/sample_rate)
-                speaker_conn.sendto(b'stream complete', curr_subnet.speaker)
-                controller_conn.sendto(b'stream complete', curr_subnet.controller)
-            case b'exit':
+        command = msg.decode("utf-8").split()
+        print(command)
+        stream_thread = threading.Thread(target=stream, args=(curr_subnet, controller_conn, speaker_conn, ))
+        match command[0]:
+            case 'play':
+                if len(command) > 1:
+                    match command[1]:
+                        case 'crab_rave':
+                            with song_name.mutex:
+                                song_name.queue.clear()
+                            song_name.put("crab_rave")
+                            stream_thread.start()
+                        case 'megalovania':
+                            with song_name.mutex:
+                                song_name.queue.clear()
+                            song_name.put("megalovania")
+                            stream_thread.start()
+                        case _:
+                            stream_thread.start()
+                else:
+                    stream_thread.start()
+            case 'stop':
+                print(run_stream.qsize())
+                run_stream.put("stop")
+                print(run_stream.qsize())
+            case 'exit':
                 break
             case _:
                 break
+
+def stream(curr_subnet, controller_conn, speaker_conn):
+    CHUNK = 12 * 1024
+    song = wave.open("songs/{}.wav".format(song_name.get()))
+
+    def kill_at_song_finish(song):
+        duration = (song.getnframes() / song.getframerate())
+        timer = time.perf_counter() + duration
+        while True:
+            if time.perf_counter() > timer:
+                break
+        run_stream.put("stop")
+
+    print(curr_subnet.controller)
+    print(curr_subnet.speaker)
+    controller_conn.sendto(b'playing', curr_subnet.controller)
+    # speaker_conn.sendto(struct.pack("f", song_duration), curr_subnet.speaker)
+
+    timer_thread = threading.Thread(target=kill_at_song_finish, args=(song, ))
+    timer_thread.start()
+
+    while run_stream.empty():
+        data = song.readframes(CHUNK)
+        if data != b'':
+            speaker_conn.sendto(data, curr_subnet.speaker)
+    
+    speaker_conn.sendto(b'stop', curr_subnet.speaker)
+    controller_conn.sendto(b'stream complete', curr_subnet.controller)
+    print("stream complete")
+    with run_stream.mutex:
+        run_stream.queue.clear()
+    print(run_stream.qsize())
 
 def main():
     start_stream = threading.Event()
@@ -192,4 +223,7 @@ def main():
         
     
 if __name__ == "__main__":
+    run_stream = Queue()
+    song_name = Queue()
+    song_name.put("crab_rave")
     main()
